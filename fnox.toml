@@ -1,0 +1,31 @@
+# Per-repo fnox config for workers-rs-util. Secrets live in the macOS keychain
+# (service = "fnox"). The LEFT of each [secrets] entry is the env var the code
+# reads at runtime; `value` is the keychain item name -- repo-prefixed
+# (WORKERS_RS_UTIL_*) so it can't collide in the shared `fnox` service with
+# other repos. Populate items with the generate tasks (mise run *:secrets:*) or
+# `security add-generic-password -U -s fnox -a <ITEM> -w <value>`.
+#
+# NOTE: the local FS-RPC smoke (cf:fs:smoke) runs no-auth against wrangler dev,
+# so none of these need to be populated just to build + smoke locally.
+
+[providers.keychain]
+type = "keychain"
+service = "fnox"
+
+[secrets]
+# Cloudflare API token (shared global token on this machine; for a scoped
+# per-repo token, point this at WORKERS_RS_UTIL_CLOUDFLARE_API_TOKEN instead).
+CLOUDFLARE_API_TOKEN = { provider = "keychain", value = "CLOUDFLARE_API_TOKEN" }
+
+# cloudflare-shell-rpc bearer. Gates the deployed FS-RPC Worker; pushed to
+# wrangler as a secret by cf:fs:deploy:all.
+SHELL_FS_TOKEN = { provider = "keychain", value = "WORKERS_RS_UTIL_SHELL_FS_TOKEN" }
+
+# cf_email_worker secrets.
+CF_EMAIL_AUTH_TOKEN       = { provider = "keychain", value = "WORKERS_RS_UTIL_EMAIL_AUTH_TOKEN" }
+CF_EMAIL_WEBHOOK_HMAC_KEY = { provider = "keychain", value = "WORKERS_RS_UTIL_EMAIL_WEBHOOK_HMAC_KEY" }
+CF_EMAIL_WORKER_URL       = { provider = "keychain", value = "WORKERS_RS_UTIL_EMAIL_WORKER_URL" }
+CF_EMAIL_WEBHOOK_URL      = { provider = "keychain", value = "WORKERS_RS_UTIL_EMAIL_WEBHOOK_URL" }
+CF_EMAIL_SENDER_DOMAIN    = { provider = "keychain", value = "WORKERS_RS_UTIL_EMAIL_SENDER_DOMAIN" }
+EMAIL_ADMIN_TOKEN         = { provider = "keychain", value = "WORKERS_RS_UTIL_EMAIL_ADMIN_TOKEN" }
+TEST_RECIPIENT_EMAIL      = { provider = "keychain", value = "WORKERS_RS_UTIL_EMAIL_TEST_RECIPIENT_EMAIL" }

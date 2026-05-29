@@ -1,0 +1,11 @@
+/target
+.cargo/
+.src/
+.wrangler/
+build/
+node_modules/
+package-lock.json
+bun.lock
+.claude/
+# NOTE: fnox.toml IS committed -- it's the per-repo secrets contract (keychain
+# provider mappings only, never plaintext values).
