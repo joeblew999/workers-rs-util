@@ -8,6 +8,11 @@ nushell's file operations are portable: the same calls work on a native FS and
 on Cloudflare (Durable Object SQLite + R2). That FS abstraction is *why* the
 plugins live here alongside it.
 
+## Related repositories
+
+- **[http-nu](https://github.com/joeblew999/http-nu)**: Nushell-scriptable HTTP server; consumes `cloudflare-shell` from here.
+- **[xs](https://github.com/joeblew999/xs)**: cross.stream event store, http-nu's companion.
+
 ## Crates
 
 | Crate | Target | What it is |
