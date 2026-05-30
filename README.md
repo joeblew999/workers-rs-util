@@ -27,6 +27,7 @@ that other services (or the xs-powered stack) can bind to.
 
 - **[http-nu](https://github.com/joeblew999/http-nu)**: Nushell-scriptable HTTP server; consumes `cloudflare-shell` from here.
 - **[xs](https://github.com/joeblew999/xs)**: cross.stream event store, http-nu's companion.
+- **[connectrpc-cedar](https://github.com/joeblew999/connectrpc-cedar)**: ConnectRPC + Cedar authz middleware (`tower::Layer`) on Cloudflare Workers. Sibling project, not a dependency; shares the `cedar-policy` crate with `nu_plugin_cedar`.
 
 ## Crates
 
