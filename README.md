@@ -8,6 +8,21 @@ nushell's file operations are portable: the same calls work on a native FS and
 on Cloudflare (Durable Object SQLite + R2). That FS abstraction is *why* the
 plugins live here alongside it.
 
+## Native and Cloudflare parity
+
+This is what lets **http-nu** and **xs** run the same code on a laptop and on
+Cloudflare Workers. `cloudflare-shell` is one `FileSystem` trait with two
+backends:
+
+- **Native** -- the real OS filesystem.
+- **Cloudflare** -- Durable Object SQLite + R2 (`cloudflare-shell-workspace`),
+  which behaves like a native FS.
+
+Call sites use the trait, not a backend, so the nushell scripts, plugins, and
+the http-nu server build and run unchanged in either place -- no per-target
+`cfg` forks. `cloudflare-shell-rpc` also exposes that FS as a standalone Worker
+that other services (or the xs-powered stack) can bind to.
+
 ## Related repositories
 
 - **[http-nu](https://github.com/joeblew999/http-nu)**: Nushell-scriptable HTTP server; consumes `cloudflare-shell` from here.
