@@ -27,7 +27,20 @@ that other services (or the xs-powered stack) can bind to.
 
 - **[http-nu](https://github.com/joeblew999/http-nu)**: Nushell-scriptable HTTP server; consumes `cloudflare-shell` from here.
 - **[xs](https://github.com/joeblew999/xs)**: cross.stream event store, http-nu's companion.
-- **[connectrpc-cedar](https://github.com/joeblew999/connectrpc-cedar)**: ConnectRPC + Cedar authz middleware (`tower::Layer`) on Cloudflare Workers. Sibling project, not a dependency; shares the `cedar-policy` crate with `nu_plugin_cedar`.
+- **[connectrpc-cedar](https://github.com/joeblew999/connectrpc-cedar)**: ConnectRPC + Cedar authorization middleware (`tower::Layer`) on Cloudflare Workers.
+
+**How connectrpc-cedar relates.** Both repos do Cedar policy authorization on
+Cloudflare Workers on the same [`cedar-policy`](https://www.cedarpolicy.com/)
+engine, just at different surfaces:
+
+- **`nu_plugin_cedar`** (here): evaluate Cedar policies from nushell scripts and
+  http-nu handlers.
+- **connectrpc-cedar**: enforce Cedar as a `tower::Layer` in front of ConnectRPC
+  RPC handlers.
+
+Same policy language and entities, two integration points. Reach for
+connectrpc-cedar to authorize RPC services; reach for `nu_plugin_cedar` to run
+policy checks inside nushell/http-nu. It is a sibling project, not a dependency.
 
 ## Crates
 
