@@ -14,19 +14,31 @@ experimental = true
 # Shared TOML task library from joeblew999/.github (provides cf:token-check,
 # ci:_base, etc. that the deploy tasks below depend on).
 includes = [
-  "git::https://github.com/joeblew999/.github.git//tasks/ci.toml?ref=v0.33.0",
-  "git::https://github.com/joeblew999/.github.git//tasks/rust.toml?ref=v0.33.0",
-  "git::https://github.com/joeblew999/.github.git//tasks/cf.toml?ref=v0.33.0",
-  "git::https://github.com/joeblew999/.github.git//tasks/wrangler.toml?ref=v0.33.0",
+  "git::https://github.com/joeblew999/.github.git//tasks/mise.toml?ref=v0.56.0",
+  "git::https://github.com/joeblew999/.github.git//tasks/ci.toml?ref=v0.56.0",
+  "git::https://github.com/joeblew999/.github.git//tasks/tool-rust.toml?ref=v0.56.0",
+  "git::https://github.com/joeblew999/.github.git//tasks/tool-cf.toml?ref=v0.56.0",
+  "git::https://github.com/joeblew999/.github.git//tasks/tool-wrangler.toml?ref=v0.56.0",
 ]
 
 [tools]
-rust                     = "stable"
-"github:nushell/nushell" = "0.112"
-"github:jdx/fnox"        = "1.24"
+# Repo-specific tools only. Rust -> rust-toolchain.toml (rustup); fnox/gh/jq/...
+# come from the global config via `mise run mise:global:bootstrap` (CI runs it
+# too). nushell IS pinned here as a per-repo override (beats global `latest`):
+# the nu_plugin_* crates link nu-plugin 0.113.1, so the standalone nu must match.
+"github:nushell/nushell" = "0.113"
 
 [env]
 CARGO_TERM_COLOR = "always"
+# CI: which OS runners the reusable workflow fans out to (read by
+# `mise run mise:repo:bootstrap` -> .github/workflows/mise.yml).
+CI_OS_MATRIX = '["ubuntu-latest", "macos-latest", "windows-latest"]'
+
+# CI pipeline: `mise run ci` (local AND on the matrix). MERGES with the shared
+# ci (ci:check-global + ci:check-nu from tasks/ci.toml). Native plugin build+test
+# only -- the wasm/wrangler tasks need extra targets/daemons, run separately.
+[tasks.ci]
+depends = ["plugins:build", "plugins:test"]
 
 # ============================================================================
 # plugin build/test aggregates (host)
@@ -51,21 +63,24 @@ description = "Build the cloudflare-shell-rpc Worker (wasm + custom shim). Set C
 dir = "{{config_root}}/crates/cloudflare-shell-rpc/server"
 tools = { "cargo:worker-build" = "^0.8" }
 run = '''
-set -euo pipefail
-MODE="${CF_BUILD_MODE:-dev}"
+#!/usr/bin/env nu
+let mode = ($env.CF_BUILD_MODE? | default "dev")
 # CUSTOM_SHIM points worker-build at our hand-written WorkerEntrypoint
 # template (see ./shim.js for why -- env injection for RPC methods).
 # Absolute path so worker-build resolves it regardless of where it cd's
 # internally.
-export CUSTOM_SHIM="$(pwd)/shim.js"
-echo "building cloudflare-shell-rpc (mode: $MODE)"
-case "$MODE" in
-  dev)     worker-build --dev ;;
-  release) worker-build --release ;;
-  *) echo "✗ CF_BUILD_MODE=$MODE invalid (use 'dev' or 'release')" >&2; exit 1 ;;
-esac
-WASM=$(find build -maxdepth 4 -name '*.wasm' -type f | head -1)
-[ -n "$WASM" ] && echo "✓ built  $WASM ($(du -h "$WASM" | cut -f1))"
+$env.CUSTOM_SHIM = ((pwd) | path join "shim.js")
+print $"building cloudflare-shell-rpc (mode: ($mode))"
+match $mode {
+  "dev" => { ^worker-build --dev }
+  "release" => { ^worker-build --release }
+  _ => { error make {msg: $"CF_BUILD_MODE=($mode) invalid \(use 'dev' or 'release'\)"} }
+}
+let wasm = (glob "build/**/*.wasm" | where {|p| ($p | path type) == "file" } | first)
+if ($wasm | is-not-empty) {
+  let size = (^du -h $wasm | str trim | split row "\t" | first)
+  print $"built  ($wasm) \(($size)\)"
+}
 '''
 
 [tasks."cf:fs:dev"]
@@ -79,26 +94,27 @@ run = "wrangler dev --port 8788"
 description = "Deploy cloudflare-shell-rpc to Cloudflare (requires CLOUDFLARE_API_TOKEN; pulls from fnox). Forces release-mode build."
 depends = ["cf:token-check"]
 dir = "{{config_root}}/crates/cloudflare-shell-rpc/server"
-tools = { "npm:wrangler" = "4.90", node = "22", "github:jdx/fnox" = "1.24" }
+tools = { "npm:wrangler" = "4.90", node = "22" }
 run = '''
-set -euo pipefail
-export CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-$(fnox get CLOUDFLARE_API_TOKEN)}"
-CF_BUILD_MODE=release mise run cf:fs:build
-wrangler deploy
+#!/usr/bin/env nu
+$env.CLOUDFLARE_API_TOKEN = ($env.CLOUDFLARE_API_TOKEN? | default (^fnox get CLOUDFLARE_API_TOKEN | str trim))
+$env.CF_BUILD_MODE = "release"
+^mise run cf:fs:build
+^wrangler deploy
 '''
 
 [tasks."cf:fs:tail"]
 description = "Live-tail logs from the deployed cloudflare-shell-rpc Worker."
 depends = ["cf:token-check"]
 dir = "{{config_root}}/crates/cloudflare-shell-rpc/server"
-tools = { "npm:wrangler" = "4.90", node = "22", "github:jdx/fnox" = "1.24" }
+tools = { "npm:wrangler" = "4.90", node = "22" }
 run = '''
-set -euo pipefail
-export CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-$(fnox get CLOUDFLARE_API_TOKEN)}"
-wrangler tail
+#!/usr/bin/env nu
+$env.CLOUDFLARE_API_TOKEN = ($env.CLOUDFLARE_API_TOKEN? | default (^fnox get CLOUDFLARE_API_TOKEN | str trim))
+^wrangler tail
 '''
 
-# ─── demo-js: JS Worker that consumes the FS-RPC binding ──────────────
+# --- demo-js: JS Worker that consumes the FS-RPC binding --------------
 
 [tasks."cf:fs:demo:dev"]
 description = "Run the cloudflare-shell-rpc JS demo client locally via wrangler dev on :8789. The server (cf:fs:dev on :8788) must be running too -- service bindings resolve cross-process via wrangler's local dev registry. Smoke-test via cf:fs:smoke."
@@ -110,30 +126,33 @@ run = "wrangler dev --port 8789"
 description = "Deploy the cloudflare-shell-rpc JS demo client. Requires the server to be deployed first (service binding resolution)."
 depends = ["cf:token-check"]
 dir = "{{config_root}}/crates/cloudflare-shell-rpc/demo-js"
-tools = { "npm:wrangler" = "4.90", node = "22", "github:jdx/fnox" = "1.24" }
+tools = { "npm:wrangler" = "4.90", node = "22" }
 run = '''
-set -euo pipefail
-export CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-$(fnox get CLOUDFLARE_API_TOKEN)}"
-wrangler deploy
+#!/usr/bin/env nu
+$env.CLOUDFLARE_API_TOKEN = ($env.CLOUDFLARE_API_TOKEN? | default (^fnox get CLOUDFLARE_API_TOKEN | str trim))
+^wrangler deploy
 '''
 
-# ─── demo-rust: Rust Worker that consumes the FS-RPC binding ──────────
+# --- demo-rust: Rust Worker that consumes the FS-RPC binding ----------
 
 [tasks."cf:fs:demo:rust:build"]
 description = "Build the cloudflare-shell-rpc Rust demo Worker (uses worker-build's default shim -- no env-injection workaround needed on the consumer side). CF_BUILD_MODE=release for prod, default is dev."
 dir = "{{config_root}}/crates/cloudflare-shell-rpc/demo-rust"
 tools = { "cargo:worker-build" = "^0.8" }
 run = '''
-set -euo pipefail
-MODE="${CF_BUILD_MODE:-dev}"
-echo "building cloudflare-shell-rpc-demo-rust (mode: $MODE)"
-case "$MODE" in
-  dev)     worker-build --dev ;;
-  release) worker-build --release ;;
-  *) echo "✗ CF_BUILD_MODE=$MODE invalid" >&2; exit 1 ;;
-esac
-WASM=$(find build -maxdepth 4 -name '*.wasm' -type f | head -1)
-[ -n "$WASM" ] && echo "✓ built  $WASM ($(du -h "$WASM" | cut -f1))"
+#!/usr/bin/env nu
+let mode = ($env.CF_BUILD_MODE? | default "dev")
+print $"building cloudflare-shell-rpc-demo-rust (mode: ($mode))"
+match $mode {
+  "dev" => { ^worker-build --dev }
+  "release" => { ^worker-build --release }
+  _ => { error make {msg: $"CF_BUILD_MODE=($mode) invalid"} }
+}
+let wasm = (glob "build/**/*.wasm" | where {|p| ($p | path type) == "file" } | first)
+if ($wasm | is-not-empty) {
+  let size = (^du -h $wasm | str trim | split row "\t" | first)
+  print $"built  ($wasm) \(($size)\)"
+}
 '''
 
 [tasks."cf:fs:demo:rust:dev"]
@@ -147,66 +166,70 @@ run = "wrangler dev --port 8790"
 description = "Deploy the Rust demo Worker. Server must be deployed first."
 depends = ["cf:token-check"]
 dir = "{{config_root}}/crates/cloudflare-shell-rpc/demo-rust"
-tools = { "npm:wrangler" = "4.90", node = "22", "github:jdx/fnox" = "1.24" }
+tools = { "npm:wrangler" = "4.90", node = "22" }
 run = '''
-set -euo pipefail
-export CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-$(fnox get CLOUDFLARE_API_TOKEN)}"
-CF_BUILD_MODE=release mise run cf:fs:demo:rust:build
-wrangler deploy
+#!/usr/bin/env nu
+$env.CLOUDFLARE_API_TOKEN = ($env.CLOUDFLARE_API_TOKEN? | default (^fnox get CLOUDFLARE_API_TOKEN | str trim))
+$env.CF_BUILD_MODE = "release"
+^mise run cf:fs:demo:rust:build
+^wrangler deploy
 '''
 
-# ─── full-stack remote lifecycle: deploy + secrets + smoke + teardown ──
+# --- full-stack remote lifecycle: deploy + secrets + smoke + teardown -
 
 [tasks."cf:fs:deploy:all"]
 description = "Deploy all three Workers (server, demo-js, demo-rust) in dependency order, then push SHELL_FS_TOKEN to each as a wrangler secret if it's in fnox. Idempotent: re-running redeploys + refreshes secrets. The deploy order (server first, then demos, then secret-push to demos before server) avoids any window where consumers can't auth."
 depends = ["cf:token-check"]
 dir = "{{config_root}}"
-tools = { "npm:wrangler" = "4.90", node = "22", "github:jdx/fnox" = "1.24" }
+tools = { "npm:wrangler" = "4.90", node = "22" }
 run = '''
-set -euo pipefail
-echo "─── 1/3 deploying server ───"
-mise run cf:fs:deploy
-echo "─── 2/3 deploying demo-js ───"
-mise run cf:fs:demo:deploy
-echo "─── 3/3 deploying demo-rust ───"
-mise run cf:fs:demo:rust:deploy
+#!/usr/bin/env nu
+print "--- 1/3 deploying server ---"
+^mise run cf:fs:deploy
+print "--- 2/3 deploying demo-js ---"
+^mise run cf:fs:demo:deploy
+print "--- 3/3 deploying demo-rust ---"
+^mise run cf:fs:demo:rust:deploy
 
-TOKEN=$(fnox get SHELL_FS_TOKEN 2>/dev/null || true)
-if [ -z "$TOKEN" ]; then
-  echo ""
-  echo "no SHELL_FS_TOKEN in fnox -- skipping secret push."
-  echo "  generate one:  TOKEN=\\$(openssl rand -hex 24); echo -n \"\\$TOKEN\" | fnox set SHELL_FS_TOKEN"
-  echo "  then re-run:   mise run cf:fs:deploy:all"
-  exit 0
-fi
-export CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-$(fnox get CLOUDFLARE_API_TOKEN)}"
-echo "─── pushing SHELL_FS_TOKEN to demo-js (consumers first) ───"
-(cd crates/cloudflare-shell-rpc/demo-js && echo -n "$TOKEN" | wrangler secret put SHELL_FS_TOKEN | tail -3)
-echo "─── pushing SHELL_FS_TOKEN to demo-rust ───"
-(cd crates/cloudflare-shell-rpc/demo-rust && echo -n "$TOKEN" | wrangler secret put SHELL_FS_TOKEN | tail -3)
-echo "─── pushing SHELL_FS_TOKEN to server (closes auth last) ───"
-(cd crates/cloudflare-shell-rpc/server && echo -n "$TOKEN" | wrangler secret put SHELL_FS_TOKEN | tail -3)
-echo ""
-echo "✓ deployed + secured. URLs:"
-echo "  server   : https://cloudflare-shell-rpc.gedw99.workers.dev"
-echo "  demo-js  : https://cloudflare-shell-rpc-demo-js.gedw99.workers.dev"
-echo "  demo-rust: https://cloudflare-shell-rpc-demo-rust.gedw99.workers.dev"
+let token = (do -i { ^fnox get SHELL_FS_TOKEN } | complete | get stdout | str trim)
+if ($token | is-empty) {
+  print ""
+  print "no SHELL_FS_TOKEN in fnox -- skipping secret push."
+  print "  generate one:  let token = (openssl rand -hex 24); $token | fnox set SHELL_FS_TOKEN"
+  print "  then re-run:   mise run cf:fs:deploy:all"
+  return
+}
+$env.CLOUDFLARE_API_TOKEN = ($env.CLOUDFLARE_API_TOKEN? | default (^fnox get CLOUDFLARE_API_TOKEN | str trim))
+print "--- pushing SHELL_FS_TOKEN to demo-js (consumers first) ---"
+do { cd crates/cloudflare-shell-rpc/demo-js; $token | ^wrangler secret put SHELL_FS_TOKEN | ^tail -3 }
+print "--- pushing SHELL_FS_TOKEN to demo-rust ---"
+do { cd crates/cloudflare-shell-rpc/demo-rust; $token | ^wrangler secret put SHELL_FS_TOKEN | ^tail -3 }
+print "--- pushing SHELL_FS_TOKEN to server (closes auth last) ---"
+do { cd crates/cloudflare-shell-rpc/server; $token | ^wrangler secret put SHELL_FS_TOKEN | ^tail -3 }
+print ""
+print "deployed + secured. URLs:"
+print "  server   : https://cloudflare-shell-rpc.gedw99.workers.dev"
+print "  demo-js  : https://cloudflare-shell-rpc-demo-js.gedw99.workers.dev"
+print "  demo-rust: https://cloudflare-shell-rpc-demo-rust.gedw99.workers.dev"
 '''
 
 [tasks."cf:fs:smoke:remote"]
 description = "Smoke all three deployed Workers in turn (server-direct, demo-js, demo-rust). Pulls SHELL_FS_TOKEN from fnox if present so the server-direct call carries Authorization: Bearer."
 dir = "{{config_root}}"
-tools = { "github:jdx/fnox" = "1.24" }
+tools = {  }
 run = '''
-set -euo pipefail
-export SHELL_FS_TOKEN=$(fnox get SHELL_FS_TOKEN 2>/dev/null || true)
-echo "─── smoke server direct ───"
-LIVE_BASE=https://cloudflare-shell-rpc.gedw99.workers.dev mise run cf:fs:smoke:server
-echo "─── smoke demo-js ───"
-LIVE_BASE=https://cloudflare-shell-rpc-demo-js.gedw99.workers.dev mise run cf:fs:smoke
-echo "─── smoke demo-rust ───"
-LIVE_BASE=https://cloudflare-shell-rpc-demo-rust.gedw99.workers.dev mise run cf:fs:smoke:rust
-echo "✓ remote smoke all green"
+#!/usr/bin/env nu
+$env.SHELL_FS_TOKEN = (do -i { ^fnox get SHELL_FS_TOKEN } | complete | get stdout | str trim)
+print "--- smoke server direct ---"
+$env.LIVE_BASE = "https://cloudflare-shell-rpc.gedw99.workers.dev"
+^mise run cf:fs:smoke:server
+print "--- smoke demo-js ---"
+$env.LIVE_BASE = "https://cloudflare-shell-rpc-demo-js.gedw99.workers.dev"
+^mise run cf:fs:smoke
+print "--- smoke demo-rust ---"
+$env.LIVE_BASE = "https://cloudflare-shell-rpc-demo-rust.gedw99.workers.dev"
+^mise run cf:fs:smoke:rust
+print "remote smoke all green"
 '''
 
 [tasks."cf:fs:teardown"]
@@ -214,19 +237,19 @@ description = "Tear down the three deployed Workers (wrangler delete) -- DESTRUC
 depends = ["cf:token-check"]
 confirm = "Delete deployed Workers cloudflare-shell-rpc + demo-js + demo-rust? Worker code goes; R2 bucket data + DO contents survive."
 dir = "{{config_root}}"
-tools = { "npm:wrangler" = "4.90", node = "22", "github:jdx/fnox" = "1.24" }
+tools = { "npm:wrangler" = "4.90", node = "22" }
 run = '''
-set -euo pipefail
-export CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-$(fnox get CLOUDFLARE_API_TOKEN)}"
-echo "─── deleting demo-rust (consumer first) ───"
-(cd crates/cloudflare-shell-rpc/demo-rust && wrangler delete --force || true)
-echo "─── deleting demo-js ───"
-(cd crates/cloudflare-shell-rpc/demo-js && wrangler delete --force || true)
-echo "─── deleting server (last) ───"
-(cd crates/cloudflare-shell-rpc/server && wrangler delete --force || true)
-echo ""
-echo "Workers deleted. R2 bucket cloudflare-shell-rpc-files preserved -- delete via:"
-echo "  wrangler r2 bucket delete cloudflare-shell-rpc-files --force"
+#!/usr/bin/env nu
+$env.CLOUDFLARE_API_TOKEN = ($env.CLOUDFLARE_API_TOKEN? | default (^fnox get CLOUDFLARE_API_TOKEN | str trim))
+print "--- deleting demo-rust (consumer first) ---"
+do -i { cd crates/cloudflare-shell-rpc/demo-rust; ^wrangler delete --force }
+print "--- deleting demo-js ---"
+do -i { cd crates/cloudflare-shell-rpc/demo-js; ^wrangler delete --force }
+print "--- deleting server (last) ---"
+do -i { cd crates/cloudflare-shell-rpc/server; ^wrangler delete --force }
+print ""
+print "Workers deleted. R2 bucket cloudflare-shell-rpc-files preserved -- delete via:"
+print "  wrangler r2 bucket delete cloudflare-shell-rpc-files --force"
 '''
 
 [tasks."cf:fs:smoke:rust"]
@@ -238,12 +261,13 @@ run = 'nu crates/cloudflare-shell-rpc/smoke/run.nu --url "${LIVE_BASE:-http://12
 description = "End-to-end smoke test against the server's direct HTTP routes (:8788), no service binding involved. If the server has SHELL_FS_TOKEN set, export it locally (or pull from fnox) before running."
 dir = "{{config_root}}"
 run = '''
-nu crates/cloudflare-shell-rpc/smoke/run.nu \
-  --url "${LIVE_BASE:-http://127.0.0.1:8788}" \
-  --auth "${SHELL_FS_TOKEN:-}"
+#!/usr/bin/env nu
+let url = ($env.LIVE_BASE? | default "http://127.0.0.1:8788")
+let auth = ($env.SHELL_FS_TOKEN? | default "")
+^nu crates/cloudflare-shell-rpc/smoke/run.nu --url $url --auth $auth
 '''
 
-# ─── pitchfork: bring up / tear down all three FS Workers together ────
+# --- pitchfork: bring up / tear down all three FS Workers together ----
 #
 # Daemon definitions live in crates/cloudflare-shell-rpc/pitchfork.toml.
 # Pinned to v2.10.0 (fixes over the older jdx-namespaced 2.2.0).
@@ -259,10 +283,10 @@ description = "Stop all FS-RPC daemons started by cf:fs:up."
 dir = "{{config_root}}/crates/cloudflare-shell-rpc"
 tools = { "github:endevco/pitchfork" = "v2.10.0" }
 run = '''
-set -euo pipefail
-pitchfork stop cf-fs-demo-js   || true
-pitchfork stop cf-fs-demo-rust || true
-pitchfork stop cf-fs-server    || true
+#!/usr/bin/env nu
+do -i { ^pitchfork stop cf-fs-demo-js }
+do -i { ^pitchfork stop cf-fs-demo-rust }
+do -i { ^pitchfork stop cf-fs-server }
 '''
 
 [tasks."cf:fs:status"]
@@ -276,8 +300,9 @@ description = "Tail logs for a FS-RPC daemon. WHICH=server|demo-js|demo-rust (de
 dir = "{{config_root}}/crates/cloudflare-shell-rpc"
 tools = { "github:endevco/pitchfork" = "v2.10.0" }
 run = '''
-WHICH="${WHICH:-server}"
-pitchfork logs "cf-fs-$WHICH"
+#!/usr/bin/env nu
+let which = ($env.WHICH? | default "server")
+^pitchfork logs $"cf-fs-($which)"
 '''
 
 [tasks."cf:fs:smoke:all"]
@@ -285,19 +310,26 @@ description = "Full end-to-end: bring up server + both demos via pitchfork, run 
 dir = "{{config_root}}/crates/cloudflare-shell-rpc"
 tools = { "github:endevco/pitchfork" = "v2.10.0" }
 run = '''
-set -euo pipefail
-trap 'mise run cf:fs:down || true' EXIT
-mise run cf:fs:up
-echo "─── smoke server direct (no binding) ───"
-mise run cf:fs:smoke:server
-echo "─── smoke JS demo ───"
-mise run cf:fs:smoke
-echo "─── smoke Rust demo ───"
-mise run cf:fs:smoke:rust
-echo "✓ cf:fs:smoke:all passed"
+#!/usr/bin/env nu
+^mise run cf:fs:up
+let result = (try {
+  print "--- smoke server direct (no binding) ---"
+  ^mise run cf:fs:smoke:server
+  print "--- smoke JS demo ---"
+  ^mise run cf:fs:smoke
+  print "--- smoke Rust demo ---"
+  ^mise run cf:fs:smoke:rust
+  {ok: true, err: null}
+} catch {|e| {ok: false, err: $e.msg} })
+do -i { ^mise run cf:fs:down }
+if $result.ok {
+  print "cf:fs:smoke:all passed"
+} else {
+  error make {msg: $result.err}
+}
 '''
 
-# ─── bench-fs-rpc: oha benchmarks against the demo Workers ────────────
+# --- bench-fs-rpc: oha benchmarks against the demo Workers ------------
 #
 # Same shape as cf:bench:* but parameterised by both demos so the
 # REPORT.md shows a JS-vs-Rust spread for each path. Workers must be
@@ -308,12 +340,11 @@ description = "Benchmark cloudflare-shell-rpc locally via both demos. Hits :8789
 dir = "{{config_root}}"
 tools = { "cargo:oha" = "1.10" }
 run = '''
-nu crates/cloudflare-shell-rpc/bench/matrix.nu \
-  --url-js   http://127.0.0.1:8789 \
-  --url-rust http://127.0.0.1:8790 \
-  --duration "${DURATION:-10s}" \
-  --connections "${CONNECTIONS:-50}" \
-  --seed-size "${SEED_SIZE:-1024}"
+#!/usr/bin/env nu
+let duration = ($env.DURATION? | default "10s")
+let connections = ($env.CONNECTIONS? | default "50")
+let seed_size = ($env.SEED_SIZE? | default "1024")
+^nu crates/cloudflare-shell-rpc/bench/matrix.nu --url-js http://127.0.0.1:8789 --url-rust http://127.0.0.1:8790 --duration $duration --connections $connections --seed-size $seed_size
 '''
 
 [tasks."cf:fs:bench:remote"]
@@ -321,15 +352,15 @@ description = "Benchmark cloudflare-shell-rpc on deployed Workers. Override LIVE
 dir = "{{config_root}}"
 tools = { "cargo:oha" = "1.10" }
 run = '''
-nu crates/cloudflare-shell-rpc/bench/matrix.nu \
-  --url-server "${LIVE_BASE_SERVER:-https://cloudflare-shell-rpc.gedw99.workers.dev}" \
-  --url-js     "${LIVE_BASE_JS:-https://cloudflare-shell-rpc-demo-js.gedw99.workers.dev}" \
-  --url-rust   "${LIVE_BASE_RUST:-https://cloudflare-shell-rpc-demo-rust.gedw99.workers.dev}" \
-  --duration "${DURATION:-10s}" \
-  --connections "${CONNECTIONS:-50}" \
-  --seed-size "${SEED_SIZE:-1024}" \
-  --auth-server "${SHELL_FS_TOKEN:-}" \
-  --tag " (remote)"
+#!/usr/bin/env nu
+let url_server = ($env.LIVE_BASE_SERVER? | default "https://cloudflare-shell-rpc.gedw99.workers.dev")
+let url_js = ($env.LIVE_BASE_JS? | default "https://cloudflare-shell-rpc-demo-js.gedw99.workers.dev")
+let url_rust = ($env.LIVE_BASE_RUST? | default "https://cloudflare-shell-rpc-demo-rust.gedw99.workers.dev")
+let duration = ($env.DURATION? | default "10s")
+let connections = ($env.CONNECTIONS? | default "50")
+let seed_size = ($env.SEED_SIZE? | default "1024")
+let auth_server = ($env.SHELL_FS_TOKEN? | default "")
+^nu crates/cloudflare-shell-rpc/bench/matrix.nu --url-server $url_server --url-js $url_js --url-rust $url_rust --duration $duration --connections $connections --seed-size $seed_size --auth-server $auth_server --tag " (remote)"
 '''
 
 [tasks."cf:fs:bench:report"]
@@ -348,11 +379,17 @@ description = "Full bench pipeline: bring up Workers via pitchfork, run cf:fs:be
 dir = "{{config_root}}"
 tools = { "cargo:oha" = "1.10" }
 run = '''
-set -euo pipefail
-trap 'mise run cf:fs:down || true' EXIT
-mise run cf:fs:up
-mise run cf:fs:bench:local
-mise run cf:fs:bench:report
+#!/usr/bin/env nu
+^mise run cf:fs:up
+let result = (try {
+  ^mise run cf:fs:bench:local
+  ^mise run cf:fs:bench:report
+  {ok: true, err: null}
+} catch {|e| {ok: false, err: $e.msg} })
+do -i { ^mise run cf:fs:down }
+if not $result.ok {
+  error make {msg: $result.err}
+}
 '''
 
 [tasks."cf:fs:smoke"]
