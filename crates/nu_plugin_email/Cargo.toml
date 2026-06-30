@@ -13,8 +13,8 @@ bench = false
 [lib]
 
 [dependencies]
-nu-plugin = "0.112.1"
-nu-protocol = { version = "0.112.1", features = ["plugin"] }
+nu-plugin = "0.113.1"
+nu-protocol = { version = "0.113.1", features = ["plugin"] }
 
 # Blocking HTTP -- the worker accepts a JSON POST and returns a JSON result.
 # Sync API keeps the plugin process small (no tokio runtime).

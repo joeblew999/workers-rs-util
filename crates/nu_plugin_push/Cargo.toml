@@ -11,8 +11,8 @@ name = "nu_plugin_push"
 bench = false
 
 [dependencies]
-nu-plugin = "0.112.1"
-nu-protocol = { version = "0.112.1", features = ["plugin"] }
+nu-plugin = "0.113.1"
+nu-protocol = { version = "0.113.1", features = ["plugin"] }
 
 # Web Push: RFC 8030 (delivery), RFC 8291 (encryption), RFC 8292 (VAPID).
 # Transport-agnostic -- produces an http::Request<Vec<u8>> that we POST via ureq.
