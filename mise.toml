@@ -14,11 +14,11 @@ experimental = true
 # Shared TOML task library from joeblew999/.github (provides cf:token-check,
 # ci:_base, etc. that the deploy tasks below depend on).
 includes = [
-  "git::https://github.com/joeblew999/.github.git//tasks/mise.toml?ref=v0.58.0",
-  "git::https://github.com/joeblew999/.github.git//tasks/ci.toml?ref=v0.58.0",
-  "git::https://github.com/joeblew999/.github.git//tasks/tool-rust.toml?ref=v0.58.0",
-  "git::https://github.com/joeblew999/.github.git//tasks/tool-cf.toml?ref=v0.58.0",
-  "git::https://github.com/joeblew999/.github.git//tasks/tool-wrangler.toml?ref=v0.58.0",
+  "git::https://github.com/joeblew999/.github.git//tasks/mise.toml?ref=v0.60.0",
+  "git::https://github.com/joeblew999/.github.git//tasks/ci.toml?ref=v0.60.0",
+  "git::https://github.com/joeblew999/.github.git//tasks/tool-rust.toml?ref=v0.60.0",
+  "git::https://github.com/joeblew999/.github.git//tasks/tool-cf.toml?ref=v0.60.0",
+  "git::https://github.com/joeblew999/.github.git//tasks/tool-wrangler.toml?ref=v0.60.0",
 ]
 
 [tools]
