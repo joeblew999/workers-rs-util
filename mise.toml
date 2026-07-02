@@ -45,12 +45,12 @@ depends = ["plugins:build", "plugins:test"]
 # ============================================================================
 
 [tasks."plugins:build"]
-description = "Build all nushell plugin binaries (push, email, cedar)"
-depends = ["push:plugin:build", "email:plugin:build", "cedar:plugin:build"]
+description = "Build all nushell plugin binaries (email, cedar)"
+depends = ["email:plugin:build", "cedar:plugin:build"]
 
 [tasks."plugins:test"]
 description = "Unit-test all nushell plugins"
-depends = ["push:plugin:test", "email:plugin:test"]
+depends = ["email:plugin:test"]
 
 [tasks."cedar:plugin:build"]
 description = "Build the nu_plugin_cedar binary used by ex:cedar-admin"
@@ -408,18 +408,11 @@ run = 'nu crates/cloudflare-shell-rpc/smoke/run.nu --url "${LIVE_BASE:-http://12
 # works because shell env DOES propagate into the subprocess + its deps.)
 # CLOUDFLARE_STATUS.md's "Example status" table tracks which demos work.
 
-[tasks."push:plugin:build"]
-description = "Build the nu_plugin_push binary"
-sources = ["crates/nu_plugin_push/src/**/*.rs", "crates/nu_plugin_push/Cargo.toml"]
-outputs = ["target/debug/nu_plugin_push"]
-run = "cargo build -p nu_plugin_push"
-
-[tasks."push:plugin:test"]
-description = "Run unit tests for nu_plugin_push"
-run = "cargo test -p nu_plugin_push"
+# nu_plugin_push moved to joeblew999/http-nu (its only consumer is that repo's
+# examples/push-demo). See http-nu's mise.toml push-demo section.
 
 # ============================================================================
-# VAPID keypair management (fnox-backed)
+# Email plugin build / test
 # ============================================================================
 
 [tasks."email:plugin:build"]

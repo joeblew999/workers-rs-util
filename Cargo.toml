@@ -8,7 +8,6 @@ members = [
     "crates/cloudflare-shell-rpc/client",
     "crates/cloudflare-shell-rpc/demo-rust",
     "crates/nu_plugin_cedar",
-    "crates/nu_plugin_push",
     "crates/nu_plugin_email",
     "crates/cf_email_worker",
 ]
@@ -22,7 +21,6 @@ default-members = [
     "crates/cloudflare-shell-rpc/types",
     "crates/cloudflare-shell-rpc/client",
     "crates/nu_plugin_cedar",
-    "crates/nu_plugin_push",
     "crates/nu_plugin_email",
 ]
 
