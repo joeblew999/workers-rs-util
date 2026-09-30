@@ -27,7 +27,7 @@ includes = [
 # come from the global config via `mise run mise:global:bootstrap` (CI runs it
 # too). nushell IS pinned here as a per-repo override (beats global `latest`):
 # the nu_plugin_* crates link nu-plugin 0.113.1, so the standalone nu must match.
-"github:nushell/nushell" = "0.113"
+"github:nushell/nushell" = "0.113.1"
 
 [env]
 CARGO_TERM_COLOR = "always"
