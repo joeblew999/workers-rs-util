@@ -2,4 +2,4 @@
 # RUSTUP_TOOLCHAIN and override it). `ci:check-global` enforces rust stays out
 # of [tools]. stable satisfies the nu 0.113.1 MSRV (1.93.1).
 [toolchain]
-channel = "stable"
+channel = "1.95.0"

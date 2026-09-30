@@ -8,6 +8,7 @@
 #   email:worker:*       -- cf_email_worker build/check/dev/deploy
 
 [settings]
+idiomatic_version_file_enable_tools = ["rust"]
 experimental = true
 
 [task_config]
