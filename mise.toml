@@ -1,3 +1,4 @@
+# Project-local tasks only. See MISE-RETIREMENT.md for retired workflows and prerequisites.
 # workers-rs-util -- extra Rust crates for Cloudflare workers-rs, plus the
 # nushell plugins that build on the cloudflare-shell FS abstraction.
 #
@@ -11,20 +12,9 @@
 idiomatic_version_file_enable_tools = ["rust"]
 experimental = true
 
-[task_config]
-# Shared TOML task library from joeblew999/.github (provides cf:token-check,
-# ci:_base, etc. that the deploy tasks below depend on).
-includes = [
-  "git::https://github.com/joeblew999/.github.git//tasks/mise.toml?ref=v0.67.1",
-  "git::https://github.com/joeblew999/.github.git//tasks/ci.toml?ref=v0.67.1",
-  "git::https://github.com/joeblew999/.github.git//tasks/tool-rust.toml?ref=v0.67.1",
-  "git::https://github.com/joeblew999/.github.git//tasks/tool-cf.toml?ref=v0.67.1",
-  "git::https://github.com/joeblew999/.github.git//tasks/tool-wrangler.toml?ref=v0.67.1",
-]
 
 [tools]
 # Repo-specific tools only. Rust -> rust-toolchain.toml (rustup); fnox/gh/jq/...
-# come from the global config via `mise run mise:global:bootstrap` (CI runs it
 # too). nushell IS pinned here as a per-repo override (beats global `latest`):
 # the nu_plugin_* crates link nu-plugin 0.113.1, so the standalone nu must match.
 "github:nushell/nushell" = "0.113.1"
@@ -32,14 +22,8 @@ includes = [
 [env]
 CARGO_TERM_COLOR = "always"
 # CI: which OS runners the reusable workflow fans out to (read by
-# `mise run mise:repo:bootstrap` -> .github/workflows/mise.yml).
-CI_OS_MATRIX = '["ubuntu-latest", "macos-latest", "windows-latest"]'
 
-# CI pipeline: `mise run ci` (local AND on the matrix). MERGES with the shared
-# ci (ci:check-global + ci:check-nu from tasks/ci.toml). Native plugin build+test
 # only -- the wasm/wrangler tasks need extra targets/daemons, run separately.
-[tasks.ci]
-depends = ["plugins:build", "plugins:test"]
 
 # ============================================================================
 # plugin build/test aggregates (host)
@@ -91,29 +75,7 @@ dir = "{{config_root}}/crates/cloudflare-shell-rpc/server"
 tools = { "npm:wrangler" = "4.90", node = "22" }
 run = "wrangler dev --port 8788"
 
-[tasks."cf:fs:deploy"]
-description = "Deploy cloudflare-shell-rpc to Cloudflare (requires CLOUDFLARE_API_TOKEN; pulls from fnox). Forces release-mode build."
-depends = ["cf:token-check"]
-dir = "{{config_root}}/crates/cloudflare-shell-rpc/server"
-tools = { "npm:wrangler" = "4.90", node = "22" }
-run = '''
-#!/usr/bin/env nu
-$env.CLOUDFLARE_API_TOKEN = ($env.CLOUDFLARE_API_TOKEN? | default (^fnox get CLOUDFLARE_API_TOKEN | str trim))
-$env.CF_BUILD_MODE = "release"
-^mise run cf:fs:build
-^wrangler deploy
-'''
 
-[tasks."cf:fs:tail"]
-description = "Live-tail logs from the deployed cloudflare-shell-rpc Worker."
-depends = ["cf:token-check"]
-dir = "{{config_root}}/crates/cloudflare-shell-rpc/server"
-tools = { "npm:wrangler" = "4.90", node = "22" }
-run = '''
-#!/usr/bin/env nu
-$env.CLOUDFLARE_API_TOKEN = ($env.CLOUDFLARE_API_TOKEN? | default (^fnox get CLOUDFLARE_API_TOKEN | str trim))
-^wrangler tail
-'''
 
 # --- demo-js: JS Worker that consumes the FS-RPC binding --------------
 
@@ -123,16 +85,6 @@ dir = "{{config_root}}/crates/cloudflare-shell-rpc/demo-js"
 tools = { "npm:wrangler" = "4.90", node = "22" }
 run = "wrangler dev --port 8789"
 
-[tasks."cf:fs:demo:deploy"]
-description = "Deploy the cloudflare-shell-rpc JS demo client. Requires the server to be deployed first (service binding resolution)."
-depends = ["cf:token-check"]
-dir = "{{config_root}}/crates/cloudflare-shell-rpc/demo-js"
-tools = { "npm:wrangler" = "4.90", node = "22" }
-run = '''
-#!/usr/bin/env nu
-$env.CLOUDFLARE_API_TOKEN = ($env.CLOUDFLARE_API_TOKEN? | default (^fnox get CLOUDFLARE_API_TOKEN | str trim))
-^wrangler deploy
-'''
 
 # --- demo-rust: Rust Worker that consumes the FS-RPC binding ----------
 
@@ -163,56 +115,9 @@ dir = "{{config_root}}/crates/cloudflare-shell-rpc/demo-rust"
 tools = { "npm:wrangler" = "4.90", node = "22" }
 run = "wrangler dev --port 8790"
 
-[tasks."cf:fs:demo:rust:deploy"]
-description = "Deploy the Rust demo Worker. Server must be deployed first."
-depends = ["cf:token-check"]
-dir = "{{config_root}}/crates/cloudflare-shell-rpc/demo-rust"
-tools = { "npm:wrangler" = "4.90", node = "22" }
-run = '''
-#!/usr/bin/env nu
-$env.CLOUDFLARE_API_TOKEN = ($env.CLOUDFLARE_API_TOKEN? | default (^fnox get CLOUDFLARE_API_TOKEN | str trim))
-$env.CF_BUILD_MODE = "release"
-^mise run cf:fs:demo:rust:build
-^wrangler deploy
-'''
 
 # --- full-stack remote lifecycle: deploy + secrets + smoke + teardown -
 
-[tasks."cf:fs:deploy:all"]
-description = "Deploy all three Workers (server, demo-js, demo-rust) in dependency order, then push SHELL_FS_TOKEN to each as a wrangler secret if it's in fnox. Idempotent: re-running redeploys + refreshes secrets. The deploy order (server first, then demos, then secret-push to demos before server) avoids any window where consumers can't auth."
-depends = ["cf:token-check"]
-dir = "{{config_root}}"
-tools = { "npm:wrangler" = "4.90", node = "22" }
-run = '''
-#!/usr/bin/env nu
-print "--- 1/3 deploying server ---"
-^mise run cf:fs:deploy
-print "--- 2/3 deploying demo-js ---"
-^mise run cf:fs:demo:deploy
-print "--- 3/3 deploying demo-rust ---"
-^mise run cf:fs:demo:rust:deploy
-
-let token = (do -i { ^fnox get SHELL_FS_TOKEN } | complete | get stdout | str trim)
-if ($token | is-empty) {
-  print ""
-  print "no SHELL_FS_TOKEN in fnox -- skipping secret push."
-  print "  generate one:  let token = (openssl rand -hex 24); $token | fnox set SHELL_FS_TOKEN"
-  print "  then re-run:   mise run cf:fs:deploy:all"
-  return
-}
-$env.CLOUDFLARE_API_TOKEN = ($env.CLOUDFLARE_API_TOKEN? | default (^fnox get CLOUDFLARE_API_TOKEN | str trim))
-print "--- pushing SHELL_FS_TOKEN to demo-js (consumers first) ---"
-do { cd crates/cloudflare-shell-rpc/demo-js; $token | ^wrangler secret put SHELL_FS_TOKEN | ^tail -3 }
-print "--- pushing SHELL_FS_TOKEN to demo-rust ---"
-do { cd crates/cloudflare-shell-rpc/demo-rust; $token | ^wrangler secret put SHELL_FS_TOKEN | ^tail -3 }
-print "--- pushing SHELL_FS_TOKEN to server (closes auth last) ---"
-do { cd crates/cloudflare-shell-rpc/server; $token | ^wrangler secret put SHELL_FS_TOKEN | ^tail -3 }
-print ""
-print "deployed + secured. URLs:"
-print "  server   : https://cloudflare-shell-rpc.gedw99.workers.dev"
-print "  demo-js  : https://cloudflare-shell-rpc-demo-js.gedw99.workers.dev"
-print "  demo-rust: https://cloudflare-shell-rpc-demo-rust.gedw99.workers.dev"
-'''
 
 [tasks."cf:fs:smoke:remote"]
 description = "Smoke all three deployed Workers in turn (server-direct, demo-js, demo-rust). Pulls SHELL_FS_TOKEN from fnox if present so the server-direct call carries Authorization: Bearer."
@@ -233,25 +138,6 @@ $env.LIVE_BASE = "https://cloudflare-shell-rpc-demo-rust.gedw99.workers.dev"
 print "remote smoke all green"
 '''
 
-[tasks."cf:fs:teardown"]
-description = "Tear down the three deployed Workers (wrangler delete) -- DESTRUCTIVE. Removes the Worker code + bindings. R2 bucket data + DO SQLite contents survive (delete the bucket manually if you want a full wipe)."
-depends = ["cf:token-check"]
-confirm = "Delete deployed Workers cloudflare-shell-rpc + demo-js + demo-rust? Worker code goes; R2 bucket data + DO contents survive."
-dir = "{{config_root}}"
-tools = { "npm:wrangler" = "4.90", node = "22" }
-run = '''
-#!/usr/bin/env nu
-$env.CLOUDFLARE_API_TOKEN = ($env.CLOUDFLARE_API_TOKEN? | default (^fnox get CLOUDFLARE_API_TOKEN | str trim))
-print "--- deleting demo-rust (consumer first) ---"
-do -i { cd crates/cloudflare-shell-rpc/demo-rust; ^wrangler delete --force }
-print "--- deleting demo-js ---"
-do -i { cd crates/cloudflare-shell-rpc/demo-js; ^wrangler delete --force }
-print "--- deleting server (last) ---"
-do -i { cd crates/cloudflare-shell-rpc/server; ^wrangler delete --force }
-print ""
-print "Workers deleted. R2 bucket cloudflare-shell-rpc-files preserved -- delete via:"
-print "  wrangler r2 bucket delete cloudflare-shell-rpc-files --force"
-'''
 
 [tasks."cf:fs:smoke:rust"]
 description = "End-to-end smoke test for cloudflare-shell-rpc-client via the Rust demo Worker. Same sequence as cf:fs:smoke but hits :8790 by default. LIVE_BASE=https://... overrides."
