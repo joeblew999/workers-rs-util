@@ -46,7 +46,7 @@ run = "cargo build -p nu_plugin_cedar"
 [tasks."cf:fs:build"]
 description = "Build the cloudflare-shell-rpc Worker (wasm + custom shim). Set CF_BUILD_MODE=release for an optimised build (~30s, what cf:fs:deploy uses); default is dev (~5-10s incremental)."
 dir = "{{config_root}}/crates/cloudflare-shell-rpc/server"
-tools = { "cargo:worker-build" = "^0.8" }
+tools = { "cargo:worker-build" = "0.8" }
 run = '''
 #!/usr/bin/env nu
 let mode = ($env.CF_BUILD_MODE? | default "dev")
@@ -91,7 +91,7 @@ run = "wrangler dev --port 8789"
 [tasks."cf:fs:demo:rust:build"]
 description = "Build the cloudflare-shell-rpc Rust demo Worker (uses worker-build's default shim -- no env-injection workaround needed on the consumer side). CF_BUILD_MODE=release for prod, default is dev."
 dir = "{{config_root}}/crates/cloudflare-shell-rpc/demo-rust"
-tools = { "cargo:worker-build" = "^0.8" }
+tools = { "cargo:worker-build" = "0.8" }
 run = '''
 #!/usr/bin/env nu
 let mode = ($env.CF_BUILD_MODE? | default "dev")
@@ -258,7 +258,7 @@ run = "nu crates/cloudflare-shell-rpc/bench/report.nu --save"
 [tasks."cf:fs:bench:sizes"]
 description = "Measure deployed bundle sizes (raw + gzip-9) for server / demo-js / demo-rust via `wrangler deploy --dry-run`. Appends to sizes.nuon; run cf:fs:bench:report to render the size table into both REPORT.local.md and REPORT.remote.md. No Workers need to be running; this only touches the build pipeline."
 dir = "{{config_root}}"
-tools = { "npm:wrangler" = "4.90", node = "22", "cargo:worker-build" = "^0.8" }
+tools = { "npm:wrangler" = "4.90", node = "22", "cargo:worker-build" = "0.8" }
 run = "nu crates/cloudflare-shell-rpc/bench/sizes.nu --save"
 
 [tasks."cf:fs:bench:all"]
